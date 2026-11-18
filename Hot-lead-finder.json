@@ -1,0 +1,796 @@
+{
+  "name": "Client Hunter by Mehshum",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Client Hunter",
+        "formDescription": "Give a niche and a city. The agent finds businesses on Google Maps, checks what they are missing and writes a personal message for each one.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Niche",
+              "fieldName": "niche",
+              "placeholder": "Dentists",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "City",
+              "fieldName": "city",
+              "placeholder": "Dallas, Texas",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Number of leads (max 20)",
+              "fieldType": "number",
+              "fieldName": "count",
+              "placeholder": "10",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Service you sell",
+              "fieldType": "dropdown",
+              "fieldName": "service",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "AI chatbot"
+                  },
+                  {
+                    "option": "AI automation"
+                  },
+                  {
+                    "option": "Website"
+                  },
+                  {
+                    "option": "AI voice agent"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Message language",
+              "fieldType": "dropdown",
+              "fieldName": "language",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "English"
+                  },
+                  {
+                    "option": "Roman Urdu"
+                  }
+                ]
+              },
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {
+          "appendAttribution": false,
+          "respondWithOptions": {
+            "values": {
+              "formSubmittedText": "Got it. Leads are being generated. Check your Google Sheet (Leads tab) in a few minutes."
+            }
+          }
+        }
+      },
+      "id": "30ef8d1a-733d-4f66-b63b-78f2ab3cee19",
+      "name": "Form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.6,
+      "position": [
+        672,
+        496
+      ],
+      "webhookId": "85a1b78a-cfb9-4db0-9aca-eeaea97c3341"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apify.com/v2/acts/compass~crawler-google-places/run-sync-get-dataset-items",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ searchStringsArray: [$json.niche], locationQuery: $json.city, maxCrawledPlacesPerSearch: Math.min(Number($json.count) || 10, 20), language: 'en', skipClosedPlaces: true }) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "a24ef2c2-2d82-41ef-811e-2e43a356118f",
+      "name": "Find businesses (Apify)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        896,
+        496
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "",
+          "name": "Apify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Clean the Google Maps results: remove duplicates, keep only the fields we need\nconst form = $('Form').first().json;\nconst limit = Math.min(Number(form.count) || 10, 20);\nconst seen = new Set();\nconst out = [];\n\nfor (const item of $input.all()) {\n  const p = item.json;\n  if (!p.title) continue;\n  const key = (p.title + '|' + (p.address || '')).toLowerCase();\n  if (seen.has(key)) continue;\n  seen.add(key);\n  out.push({ json: {\n    date: new Date().toISOString().slice(0, 10),\n    niche: form.niche,\n    city: form.city,\n    service: form.service,\n    language: form.language,\n    business_name: p.title,\n    category: p.categoryName || '',\n    rating: p.totalScore ?? '',\n    reviews: p.reviewsCount ?? 0,\n    phone: p.phone || '',\n    website: p.website || '',\n    maps_url: p.url || ''\n  }});\n}\n\nif (out.length === 0) {\n  throw new Error('No businesses found. Check the niche/city or your Apify token.');\n}\nreturn out.slice(0, limit);\n"
+      },
+      "id": "beb97e91-d440-45bf-a65d-37087c785cc5",
+      "name": "Prepare leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.website }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              },
+              "id": "d359a467-2a51-4235-8ca2-9ebb35451e38"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "79f45782-8d15-4cf5-9d84-f60cf591fa6a",
+      "name": "Has website?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1568,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.website }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text",
+              "outputPropertyName": "html"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "9925d450-1092-4f6b-94f2-c9f8162ece0c",
+      "name": "Fetch website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1792,
+        272
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Read the website HTML and detect simple signals\nconst lead = $('Loop Over Items').item.json;\nconst html = String($input.first().json.html || '');\nconst lower = html.toLowerCase();\nconst loaded = html.length > 500;\n\n// Many sites block automated checks. If we could not read it, we do NOT know anything about it.\nif (!loaded) {\n  return [{ json: {\n    ...lead,\n    site_loaded: 'unknown',\n    has_booking: 'unknown',\n    has_chat: 'unknown',\n    has_whatsapp: 'unknown',\n    has_contact_form: 'unknown',\n    mobile_friendly: 'unknown',\n    copyright_year: 'unknown',\n    site_text: 'The website exists but could not be checked automatically. Do not make any claim about the website itself.'\n  }}];\n}\n\nconst text = html\n  .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n  .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n  .replace(/<[^>]+>/g, ' ')\n  .replace(/\\s+/g, ' ')\n  .trim()\n  .slice(0, 2500);\n\nconst years = [...lower.matchAll(/(?:©|&copy;|copyright)\\s*(\\d{4})/g)].map(m => Number(m[1]));\n\nreturn [{ json: {\n  ...lead,\n  site_loaded: true,\n  has_booking: /calendly|acuityscheduling|book now|book online|book an appointment|schedule an appointment|booking/.test(lower),\n  has_chat: /intercom|tawk\\.to|drift\\.com|livechat|crisp\\.chat|tidio|zendesk|hs-scripts/.test(lower),\n  has_whatsapp: /wa\\.me|api\\.whatsapp\\.com/.test(lower),\n  has_contact_form: /<form/.test(lower),\n  mobile_friendly: /name=[\"']viewport[\"']/.test(lower),\n  copyright_year: years.length ? Math.max(...years) : 'unknown',\n  site_text: text\n}}];\n"
+      },
+      "id": "db4d14d3-8d96-4a72-a5cf-a5e53232c549",
+      "name": "Website signals",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2016,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build the prompt for the AI\nconst lead = $input.first().json;\n\nconst prompt = `You are a sharp B2B sales researcher for a freelancer who sells ${lead.service} to local businesses.\n\nBusiness:\n- Name: ${lead.business_name}\n- Category: ${lead.category}\n- City: ${lead.city}\n- Google rating: ${lead.rating} from ${lead.reviews} reviews\n- Website: ${lead.website || 'none'}\n\nWebsite checks (\"unknown\" means we could not check it):\n- Website loaded: ${lead.site_loaded}\n- Online booking: ${lead.has_booking}\n- Live chat: ${lead.has_chat}\n- WhatsApp button: ${lead.has_whatsapp}\n- Contact form: ${lead.has_contact_form}\n- Mobile friendly: ${lead.mobile_friendly}\n- Latest copyright year: ${lead.copyright_year}\n\nWebsite text (may be empty):\n${lead.site_text}\n\nStrict rules:\n- Never claim a website is broken, slow, not loading or not mobile friendly unless the checks above say false.\n- If a check is \"unknown\", do not mention it at all.\n- Our checks can miss chat widgets and forms loaded by JavaScript, so say \"I could not find\" instead of \"you don't have\".\n- Use only the data above. Do not invent facts, numbers or results.\n\nTasks:\n1. gaps: the 1 or 2 most likely problems that cost this business customers or time. Keep each under 20 words.\n2. opportunity_score: 1 to 10, how likely this business needs ${lead.service}.\n3. best_offer: one sentence describing the specific automation you would offer them.\n4. email_subject: under 8 words, specific to this business, no clickbait.\n5. email_body: under 90 words. Mention one real detail about their business. Explain the problem and the result in plain words. End with a simple low pressure question. No hype, no guaranteed results.\n6. dm_message: under 40 words, same idea, for WhatsApp or Instagram.\n\nWrite email_subject, email_body and dm_message in ${lead.language}.`;\n\nreturn [{ json: { lead, prompt } }];\n"
+      },
+      "id": "0b74262f-908f-486b-8268-3f5e73b8c22c",
+      "name": "Build AI prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Business has no website: that is an opportunity by itself\nconst lead = $input.first().json;\nreturn [{ json: {\n  ...lead,\n  site_loaded: false,\n  has_booking: false,\n  has_chat: false,\n  has_whatsapp: false,\n  has_contact_form: false,\n  mobile_friendly: false,\n  copyright_year: null,\n  site_text: 'Business has no website.'\n}}];\n"
+      },
+      "id": "f6895bc9-a3e9-490e-ba38-2c10c96c6a41",
+      "name": "No website",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2016,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "5172a4f7-4d8b-43c8-997d-314c11102c8d",
+      "name": "Loop Over Items",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1344,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.prompt }}",
+        "hasOutputParser": true,
+        "batching": {}
+      },
+      "id": "fa89d442-2012-4abd-968f-2e194ee9097a",
+      "name": "AI analysis",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        2464,
+        368
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"gaps\": [\n    \"No online booking\",\n    \"No live chat\"\n  ],\n  \"opportunity_score\": 8,\n  \"best_offer\": \"An AI chatbot that answers patient questions and books appointments 24/7.\",\n  \"email_subject\": \"Quick idea for Smile Dental\",\n  \"email_body\": \"Hi, ...\",\n  \"dm_message\": \"Hi, ...\"\n}"
+      },
+      "id": "698437fd-0596-4869-bcb0-cf45a7d96a52",
+      "name": "Structured output",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        2608,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine the lead with the AI answer into one Google Sheet row\nconst lead = $('Build AI prompt').item.json.lead;\nconst ai = $input.first().json.output || {};\n\nreturn [{ json: {\n  date: lead.date,\n  niche: lead.niche,\n  city: lead.city,\n  business_name: lead.business_name,\n  category: lead.category,\n  rating: lead.rating,\n  reviews: lead.reviews,\n  phone: lead.phone,\n  website: lead.website,\n  maps_url: lead.maps_url,\n  gaps: Array.isArray(ai.gaps) ? ai.gaps.join('; ') : (ai.gaps || ''),\n  opportunity_score: ai.opportunity_score ?? '',\n  best_offer: ai.best_offer || '',\n  email_subject: ai.email_subject || '',\n  email_body: ai.email_body || '',\n  dm_message: ai.dm_message || '',\n  status: 'New'\n}}];\n"
+      },
+      "id": "77358b22-2106-47d3-b5d1-22fb631e6077",
+      "name": "Shape sheet row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2816,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "date",
+              "displayName": "date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "niche",
+              "displayName": "niche",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "city",
+              "displayName": "city",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "business_name",
+              "displayName": "business_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "rating",
+              "displayName": "rating",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reviews",
+              "displayName": "reviews",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "website",
+              "displayName": "website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "maps_url",
+              "displayName": "maps_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "gaps",
+              "displayName": "gaps",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "opportunity_score",
+              "displayName": "opportunity_score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "best_offer",
+              "displayName": "best_offer",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email_subject",
+              "displayName": "email_subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email_body",
+              "displayName": "email_body",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "dm_message",
+              "displayName": "dm_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "316b6e7e-4290-4df4-9f61-2fd664f38806",
+      "name": "Save to Google Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        3040,
+        368
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 4
+      },
+      "id": "b9e62b5e-4ec8-47e0-a485-d7d3da453735",
+      "name": "Wait 4s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3264,
+        496
+      ],
+      "webhookId": "ef872dc7-3f65-424e-89c9-7eea425f745c"
+    },
+    {
+      "parameters": {
+        "content": "# START HERE\n## Client Hunter by Mehshum Asif\n\nGive it a **niche** and a **city**. It finds businesses on Google Maps, checks their website, and writes a **personal email + WhatsApp/DM message** for each one. Everything lands in your Google Sheet.\n\n---\n### One time setup (15 min)\n\n**1. Apify (finds businesses)**\nFree account at apify.com\nSettings > API & Integrations > copy token\nOpen **Find businesses (Apify)** > Credential > Create new > paste token\n\n**2. Gemini (the AI brain)**\nFree key at aistudio.google.com > Get API key\nOpen **Gemini** node > Credential > Create new > paste key\n\n**3. Google Sheet (where leads go)**\nMake a sheet, rename the tab to **Leads**, add the headers from the PDF guide\nOpen **Save to Google Sheet** > sign in with Google > pick your sheet and the Leads tab\n\n**4. Save the workflow**\n\n---\n### Run it\nClick **Execute workflow** > fill the form > Submit\nStart with **3 leads** to test.\n\nFull guide: see the PDF that came with this file.",
+        "height": 980,
+        "width": 540,
+        "color": 4
+      },
+      "id": "366716b2-8839-4a04-9883-c9920e95ba03",
+      "name": "Note: Start here",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 1. Find businesses\n**Form** collects niche, city, number of leads, your service and message language.\n**Apify** searches Google Maps (max 20 per run).\n**Prepare leads** removes duplicates and keeps only useful fields.\n\nNeeds: Apify credential",
+        "height": 440,
+        "width": 740,
+        "color": 5
+      },
+      "id": "6e90ceb0-b7c7-4ea1-bc7e-d65523b356c2",
+      "name": "Note: Step 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        592,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 2. Check each website\nThe loop takes one business at a time.\n**Has website?** splits businesses with and without a site.\n**Fetch website** opens the site, **Website signals** looks for online booking, live chat, WhatsApp button, contact form and mobile support.\n\nIf a site blocks the check, it is marked **unknown** so the AI never makes false claims.",
+        "height": 620,
+        "width": 660,
+        "color": 6
+      },
+      "id": "7c66729d-0488-4d8e-9def-231ac8960b0e",
+      "name": "Note: Step 2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 3. AI writes the outreach\n**Build AI prompt** turns the data into instructions.\n**AI analysis** (Gemini) returns:\ngaps, a 1 to 10 opportunity score, the best offer, email subject, email body and a short DM.\n\nNeeds: Gemini credential\n\nTip: edit the prompt in **Build AI prompt** to change tone or rules.",
+        "height": 780,
+        "width": 560,
+        "color": 7
+      },
+      "id": "0fc12b79-81bf-4416-bc91-43665b386ba8",
+      "name": "Note: Step 3",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2208,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 4. Save to Google Sheet\n**Shape sheet row** formats one clean row.\n**Save to Google Sheet** adds it to the **Leads** tab.\n**Wait 4s** keeps the APIs happy, then the loop picks the next business.\n\nNeeds: Google Sheets credential",
+        "height": 640,
+        "width": 620,
+        "color": 5
+      },
+      "id": "07087e47-7057-44de-9a65-44408a3ba815",
+      "name": "Note: Step 4",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2800,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "# Before you send anything\n\n**Always read and edit each message yourself.** The AI writes a draft, you are the one sending it.\nSend a few messages a day by hand, not hundreds at once. Spamming gets your email and WhatsApp banned.\nOnly contact businesses, never personal numbers, and stop if someone says no.\n\n---\n# Common errors\n\n**No businesses found**\nCheck spelling of niche and city, or your Apify token.\n\n**401 / Unauthorized on Apify**\nToken is wrong. Recreate the Bearer credential.\n\n**Gemini error or empty AI columns**\nCheck your Gemini key, or you hit the free limit. Wait a minute and run again.\n\n**Sheet error: column not found**\nTab must be named exactly **Leads** and headers must be in row 1.\n\n**Form does not open**\nAllow popups in your browser, keep the n8n tab open while testing.",
+        "height": 980,
+        "width": 480,
+        "color": 3
+      },
+      "id": "f1b7e8f5-173d-4549-a750-23a1fb4e38c0",
+      "name": "Note: Rules and fixes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3472,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        2352,
+        576
+      ],
+      "id": "7d26e6a9-8134-42e9-acae-ac494438d1ef",
+      "name": "OpenRouter Chat Model",
+      "credentials": {
+        "openRouterApi": {
+          "id": "",
+          "name": "OpenRouter account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Prepare leads": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has website?": {
+      "main": [
+        [
+          {
+            "node": "Fetch website",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No website",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Website signals": {
+      "main": [
+        [
+          {
+            "node": "Build AI prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build AI prompt": {
+      "main": [
+        [
+          {
+            "node": "AI analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No website": {
+      "main": [
+        [
+          {
+            "node": "Build AI prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Has website?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI analysis": {
+      "main": [
+        [
+          {
+            "node": "Shape sheet row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured output": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI analysis",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape sheet row": {
+      "main": [
+        [
+          {
+            "node": "Save to Google Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Google Sheet": {
+      "main": [
+        [
+          {
+            "node": "Wait 4s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 4s": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Form": {
+      "main": [
+        [
+          {
+            "node": "Find businesses (Apify)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find businesses (Apify)": {
+      "main": [
+        [
+          {
+            "node": "Prepare leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch website": {
+      "main": [
+        [
+          {
+            "node": "Website signals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI analysis",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "be6fdd7f-e4f4-4e83-8c32-dd706fcbe977",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "929fa1358981f12044f2bc52bcfd8d87dcc31548fceabec3cc8879045da2f69d"
+  },
+  "nodeGroups": [],
+  "id": "b3FwSXaHIiNjOYXx",
+  "tags": []
+}
